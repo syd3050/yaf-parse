@@ -382,6 +382,7 @@ PHP_METHOD(yaf_application, __construct) {
 	    初始化zsecton为yaf_globals.environ_name
 	    */
 		ZVAL_STRING(&zsection, YAF_G(environ_name));
+		/* 实例化Config，用于读取配置信息 */
 		(void)yaf_config_instance(&zconfig, config, &zsection);
 		zval_ptr_dtor(&zsection);
 	} else {
@@ -395,14 +396,14 @@ PHP_METHOD(yaf_application, __construct) {
 		zval_ptr_dtor(&zconfig);
 		RETURN_FALSE;
 	}
-
+    /* 实例化Request，保存请求的信息  */
 	(void)yaf_request_instance(&zrequest, YAF_G(base_uri));
 
 	if (UNEXPECTED(Z_TYPE(zrequest) != IS_OBJECT)) {
 		yaf_trigger_error(YAF_ERR_STARTUP_FAILED, "Initialization of request failed");
 		RETURN_FALSE;
 	}
-
+    /* 实例化分发器Dispatcher，这是Yaf的核心控制类   */
 	(void)yaf_dispatcher_instance(&zdispatcher);
 	if (UNEXPECTED(Z_TYPE(zdispatcher) != IS_OBJECT)) {
 		yaf_trigger_error(YAF_ERR_STARTUP_FAILED, "Instantiation of application dispatcher failed");
@@ -410,7 +411,7 @@ PHP_METHOD(yaf_application, __construct) {
 	}
 	yaf_dispatcher_set_request(&zdispatcher, &zrequest);
 	zval_ptr_dtor(&zrequest);
-
+    /* 把config实例设置成Application的属性  this->config = &zconfig */
 	zend_update_property(yaf_application_ce, self, ZEND_STRL(YAF_APPLICATION_PROPERTY_NAME_CONFIG), &zconfig);
 	zend_update_property(yaf_application_ce, self, ZEND_STRL(YAF_APPLICATION_PROPERTY_NAME_DISPATCHER), &zdispatcher);
 
@@ -420,6 +421,7 @@ PHP_METHOD(yaf_application, __construct) {
 	if (YAF_G(local_library)) {
 		zend_string *global_library = strlen(YAF_G(global_library))?
 			zend_string_init(YAF_G(global_library), strlen(YAF_G(global_library)), 0) : NULL;
+		/* 创建loader，用于自动加载类  */
 		loader = yaf_loader_instance(&zloader, YAF_G(local_library), global_library);
 		if (global_library) {
 			zend_string_release(global_library);
