@@ -200,7 +200,10 @@ PHP_MINIT_FUNCTION(yaf)
 	}
 
     /**
-	Yaf的一个优点是所有的框架类，不需要编译，在PHP启动的时候加载, 并常驻内存。如何做到这点呢？
+    用在多文件中定义启动其它主文件模块的函数：
+    #define MY_STARTUP(module) ZEND_MODULE_STARTUP_N(my_##module)(INIT_FUNC_ARGS_PASSTHRU)
+
+    Yaf的一个优点是所有的框架类，不需要编译，在PHP启动的时候加载, 并常驻内存。如何做到这点呢？
 	Yaf定义了一个YAF_STARTUP宏来加载类，加载类在 Module init阶段完成
 
     #define YAF_STARTUP(module)	ZEND_MODULE_STARTUP_N(yaf_##module)(INIT_FUNC_ARGS_PASSTHRU)
@@ -209,6 +212,8 @@ PHP_MINIT_FUNCTION(yaf)
     ZEND_MODULE_STARTUP_N(yaf_application)(INIT_FUNC_ARGS_PASSTHRU)
     即：
     zm_startup_yaf_application(INIT_FUNC_ARGS_PASSTHRU)
+    将加载yaf_application类中的ZEND_MINIT_FUNCTION函数，
+    也即YAF_STARTUP_FUNCTION(application)方法
     */
 	/* startup components */
 	YAF_STARTUP(application);

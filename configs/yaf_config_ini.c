@@ -426,16 +426,26 @@ yaf_config_t *yaf_config_ini_instance(yaf_config_t *this_ptr, zval *filename, zv
 					fh.type = ZEND_HANDLE_FP;
 					fh.free_filename = 0;
 					fh.opened_path = NULL;
+					/* Sets a yaf_global.active_ini_file_section to undefined */
 					ZVAL_UNDEF(&YAF_G(active_ini_file_section));
-
+                    /*标志置为开始解析*/
 					YAF_G(parsing_flag) = YAF_CONFIG_INI_PARSING_START;
+					/*
+					#define Z_TYPE(zval)        (zval).type
+                    #define Z_TYPE_P(zval_p)    Z_TYPE(*zval_p)
+                    #define Z_TYPE_PP(zval_pp)  Z_TYPE(**zval_pp)
+					Z_TYPE_P：判断变量类型
+					Z_STRLEN_P：变量长度
+					*/
 					if (section_name && EXPECTED(Z_TYPE_P(section_name) == IS_STRING && Z_STRLEN_P(section_name))) {
+						/*设置yaf_global.ini_wanted_section为段的名字 ==> [database] */
 						YAF_G(ini_wanted_section) = section_name;
 					} else {
 						YAF_G(ini_wanted_section) = NULL;
 					}
-
+                    /*初始化变量为HashTable类型*/
 	 				array_init(&configs);
+	 				/*调用内核函数解析ini文件*/
 					if (zend_parse_ini_file(&fh, 0, 0 /* ZEND_INI_SCANNER_NORMAL */,
 						   	(zend_ini_parser_cb_t)yaf_config_ini_parser_cb, &configs) == FAILURE
 							|| Z_TYPE(configs) != IS_ARRAY) {
