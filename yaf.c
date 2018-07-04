@@ -341,10 +341,24 @@ PHP_RSHUTDOWN_FUNCTION(yaf)
 		YAF_G(local_namespaces) = NULL;
 	}
 	if (YAF_G(bootstrap)) {
+	/**
+	zend_string_release会将它的refcount减一，如果减一后refcount为0了，将释放掉
+	zend_string_free则直接释放掉
+	*/
 		zend_string_release(YAF_G(bootstrap));
 		YAF_G(bootstrap) = NULL;
 	}
 	if (Z_TYPE(YAF_G(modules)) == IS_ARRAY) {
+	/**
+	zval_ptr_dtor首先会将它的refcount减一，如果减一后refcount为0了，
+	便会再调用zval_dtor把tmp->value给释放掉，然后再调用efree_rel()函数
+	把自己tmp所指的zval类型结构体所占的内存空间给释放掉;
+	如果减一后不为0呢？那zval_ptr_dtor便不会释放tmp->value和tmp本身，
+	而是通知一下GC垃圾回收器，然后返回而已.
+	如果减1后不为0，便会产生一个垃圾周期。
+	每10000[硬编码在源码里的一个值]个垃圾周期便会激活一次真正的垃圾回收机制。
+	增加这一步的原因是因为以前php用到的引用计数内存机制，无法处理循环的引用内存泄漏。
+	*/
 		zval_ptr_dtor(&YAF_G(modules));
 		ZVAL_UNDEF(&YAF_G(modules));
 	}
