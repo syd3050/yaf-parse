@@ -497,6 +497,11 @@ zend_class_entry *yaf_dispatcher_get_action(zend_string *app_dir, yaf_controller
 }
 /* }}} */
 
+
+/**
+从 request 对象中得知当前的 module 与 controller，之后找到对应的文件，实例化对应的 Controller，
+为对应的 Controller 设定好模板目录等这类基础属性.
+*/
 int yaf_dispatcher_handle(yaf_dispatcher_t *dispatcher, yaf_request_t *request,  yaf_response_t *response, yaf_view_t *view) /* {{{ */ {
 	zend_class_entry *request_ce;
 	zend_string *app_dir = YAF_G(directory);
@@ -580,6 +585,7 @@ int yaf_dispatcher_handle(yaf_dispatcher_t *dispatcher, yaf_request_t *request, 
 
 			zend_update_property(ce, &icontroller, ZEND_STRL(YAF_CONTROLLER_PROPERTY_NAME_NAME), controller);
 
+            /* 从 request 对象中获取 action，即实际需要执行的方法 */
 			ZVAL_COPY(&action,
 					zend_read_property(request_ce, request, ZEND_STRL(YAF_REQUEST_PROPERTY_NAME_ACTION), 1, NULL));
 
@@ -676,6 +682,20 @@ int yaf_dispatcher_handle(yaf_dispatcher_t *dispatcher, yaf_request_t *request, 
 				int auto_render;
 				render = zend_read_property(ce, executor, ZEND_STRL(YAF_CONTROLLER_PROPERTY_NAME_RENDER), 1, &rv);
 				if (render == &EG(uninitialized_zval)) {
+				    /**
+				    如果 Dispatcher 中设置了名为 $_auto_render 且值为真的成员变量
+				    （yaf_dispatcher.h 中的
+				    #define YAF_DISPATCHER_PROPERTY_NAME_RENDER "_auto_render"），
+				    当前 Controller 可能会触发自动输出。
+				    这里说可能，是因为 Controller 中的成员变量也会影响到这一行为。
+
+                    如果 Controller 中设置了名为 $yafAutoRender 且值为真的成员变量
+                    （yaf_controller.h 中的 #define YAF_CONTROLLER_PROPERTY_NAME_RENDER "yafAutoRender"），
+                    当前 Controller 会触发自动输出。
+                    只有 Controller 中没有设定这一个成员变量，Dispatcher 中的配置才会产生影响。
+
+                    实际上，Yaf_Dispatcher 中的 enableView()/disableView() 方法所做的就是修改这一成员变量的值。
+				    */
 					render = zend_read_property(yaf_dispatcher_ce,
 							dispatcher, ZEND_STRL(YAF_DISPATCHER_PROPERTY_NAME_RENDER), 1, NULL);
 				} 
@@ -831,10 +851,32 @@ int yaf_dispatcher_route(yaf_dispatcher_t *dispatcher, yaf_request_t *request) /
 }
 /* }}} */
 
+/**
+Yaf_Dispatcher 中包含一个成员变量 _router (即 YAF_DISPATCHER_PROPERTY_NAME_ROUTER)，
+此处记录了当前 app 已注册的各个路由规则。在初始化阶段（调用 yaf_router_instance() 函数），
+会注册默认路由，如果不设定，则使用的是 static 路由.
+同样的，一个 app 的 Dispatcher 对象的默认 Controller/Module/Action 等等参数，
+以及需要执行的插件，也都在这一个阶段完成了默认值的设定。
+如果有多个路由规则，这里要注意，后加入的路由规则会先被执行，此处在手册中也可以获知，从代码上来看，
+原因是 yaf_router_route() 函数在遍历 HashTable 时从 HashTable 的末端开始进行遍历：
+ht = Z_ARRVAL_P(routers);
+for(zend_hash_internal_pointer_end(ht);
+		zend_hash_has_more_elements(ht) == SUCCESS;
+		zend_hash_move_backwards(ht)) {
+一旦路由规则命中，则结束路由过程。
+
+在执行路由之后，yaf 的钩子机制会通过 YAF_PLUGIN_HANDLE 这个宏
+逐个调用已注册插件中 routershutdown 回调方法，调用顺序为注册插件的顺序。
+
+*/
 yaf_response_t *yaf_dispatcher_dispatch(yaf_dispatcher_t *dispatcher, zval *response_ptr) /* {{{ */ {
 	zval *return_response, *plugins, *view, rv;
 	yaf_response_t *response;
 	yaf_request_t *request;
+	/*
+	请求在分发过程中有最大 forward 次数即配置文件中 yaf.forward_limit 这一个配置项，
+	这个配置可以避免让用户请求陷入无限循环处理的问题之中
+	*/
 	uint nesting = YAF_G(forward_limit);
 
 	response = yaf_response_instance(response_ptr, sapi_module.name);
@@ -849,8 +891,17 @@ yaf_response_t *yaf_dispatcher_dispatch(yaf_dispatcher_t *dispatcher, zval *resp
 		return NULL;
 	}
 
+    /*
+    先判断当前请求是否已经被路由过，如果没有被路由过，
+    则通过 yaf_dispatcher_route() 函数对当前请求执行路由操作
+    */
 	/* route request */
 	if (!yaf_request_is_routed(request)) {
+	    /**
+	    在执行路由之前，yaf 的钩子机制会通过
+	    YAF_PLUGIN_HANDLE 这个宏逐个调用已注册插件中 routerstartup 回调方法，
+	    调用顺序为注册插件的顺序
+	    */
 		YAF_PLUGIN_HANDLE(plugins, YAF_PLUGIN_HOOK_ROUTESTARTUP, request, response);
 		YAF_EXCEPTION_HANDLE(dispatcher, request, response);
 		if (!yaf_dispatcher_route(dispatcher, request)) {
@@ -860,23 +911,33 @@ yaf_response_t *yaf_dispatcher_dispatch(yaf_dispatcher_t *dispatcher, zval *resp
 			return NULL;
 		}
 		yaf_dispatcher_fix_default(dispatcher, request);
+		/*
+		在执行路由之后，yaf 的钩子机制会通过 YAF_PLUGIN_HANDLE 这个宏
+		逐个调用已注册插件中 routershutdown 回调方法，调用顺序为注册插件的顺序
+		*/
 		YAF_PLUGIN_HANDLE(plugins, YAF_PLUGIN_HOOK_ROUTESHUTDOWN, request, response);
 		YAF_EXCEPTION_HANDLE(dispatcher, request, response);
 		(void)yaf_request_set_routed(request, 1);
 	} else {
 		yaf_dispatcher_fix_default(dispatcher, request);
 	}
-
+    /**
+    分发开始之前，yaf 的钩子机制会通过 YAF_PLUGIN_HANDLE 这个宏
+    逐个调用已注册插件中 dispatchloopstartup 回调方法，调用顺序为注册插件的顺序
+    */
 	YAF_PLUGIN_HANDLE(plugins, YAF_PLUGIN_HOOK_LOOPSTARTUP, request, response);
 	YAF_EXCEPTION_HANDLE(dispatcher, request, response);
 
 	ZVAL_UNDEF(&rv);
+	/* 之后会执行视图的初始化操作。 */
 	view = yaf_dispatcher_init_view(dispatcher, NULL, NULL, &rv);
 	if (!view) {
 		return NULL;
 	}
 
+    /* 受限于最大forward次数  */
 	do {
+	    /* 通过 YAF_PLUGIN_HANDLE 这个宏逐个调用已注册插件中 predispatch 回调方法 */
 		YAF_PLUGIN_HANDLE(plugins, YAF_PLUGIN_HOOK_PREDISPATCH, request, response);
 		YAF_EXCEPTION_HANDLE(dispatcher, request, response);
 		if (!yaf_dispatcher_handle(dispatcher, request, response, view)) {
@@ -885,6 +946,7 @@ yaf_response_t *yaf_dispatcher_dispatch(yaf_dispatcher_t *dispatcher, zval *resp
 			return NULL;
 		}
 		yaf_dispatcher_fix_default(dispatcher, request);
+		/* 请求完成之后在通过 YAF_PLUGIN_HANDLE 这个宏逐个调用已注册插件中 postdispatch 回调方法 */
 		YAF_PLUGIN_HANDLE(plugins, YAF_PLUGIN_HOOK_POSTDISPATCH, request, response);
 		YAF_EXCEPTION_HANDLE(dispatcher, request, response);
 	} while (--nesting > 0 && !yaf_request_is_dispatched(request));

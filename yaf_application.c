@@ -482,6 +482,10 @@ PHP_METHOD(yaf_application, __clone) {
 }
 /* }}} */
 
+/**
+判断当前 app 对象是否已经在运行中，如果在运行中则产生错误，
+否则执行 dispatch 过程，获得 response 对象。
+*/
 /** {{{ proto public Yaf_Application::run(void)
 */
 PHP_METHOD(yaf_application, run) {
@@ -575,6 +579,18 @@ PHP_METHOD(yaf_application, environ) {
 }
 /* }}} */
 
+/**
+对 yaf 进行一些全局的初始化操作.
+1.首先会在类名表（EG(class_table)）中查找名为 bootstrap 的类。
+如果不存在这样的一个 class，则通过读取名为 bootstrap 的全局变量（YAF_G(bootstrap)），
+来确定具体的需要执行的类所在的文件。如果全局变量也没有配置，
+则会在当前目录中查找是否存在 Bootstrap.php 的文件。bootstrap 这一个全局变量，
+对应的是传入的 ini 文件中的 application.bootstrap 配置项的值.
+2.在确定需要执行的 bootstrap 的文件路径之后，通过 yaf_loader_import() 函数加载文件。
+并会再次尝试在类名表（EG(class_table)）中查找名为 YAF_DEFAULT_BOOTSTRAP_LOWER 的类，
+最后判断这个类是否继承了 Yaf_Bootstrap_Abstract，任何一项不满足，都会触发错误。
+3.
+*/
 /** {{{ proto public Yaf_Application::bootstrap(void)
 */
 PHP_METHOD(yaf_application, bootstrap) {
@@ -591,6 +607,14 @@ PHP_METHOD(yaf_application, bootstrap) {
 			bootstrap_path = strpprintf(0, "%s%c%s.%s",
 					ZSTR_VAL(YAF_G(directory)), DEFAULT_SLASH, YAF_DEFAULT_BOOTSTRAP, ZSTR_VAL(YAF_G(ext)));
 		}
+		/**
+		 yaf_loader_import() 成功加载之后返回值是1，zend_hash_find() 执行成功之后返回值是 SUCCESS
+		 即0，instanceof_function() 判断为真时返回值是1，所以，上述一段代码，在一切正常的逻辑下，
+		 三个 if/else 判断中的语句都会执行。
+		 所以，上述步骤说明了两点：
+         1.bootstrap 文件的绝对路径是可以配置的
+         2.bootstrap 类名必须是 Bootstrap（因为只会在类名表中查找这一个值）
+		*/
 		if (!yaf_loader_import(bootstrap_path, 0)) {
 			php_error_docref(NULL, E_WARNING, "Couldn't find bootstrap file %s", ZSTR_VAL(bootstrap_path));
 			retval = 0;
@@ -620,6 +644,10 @@ PHP_METHOD(yaf_application, bootstrap) {
 		dispatcher = zend_read_property(yaf_application_ce,
 				self, ZEND_STRL(YAF_APPLICATION_PROPERTY_NAME_DISPATCHER), 1, NULL);
 
+        /*
+        在类加载完成后，会逐个调用 _init 开头的方法，完成初始化操作，
+        所有方法会接收 dispatcher 作为参数
+        */
 		ZEND_HASH_FOREACH_STR_KEY(&(ce->function_table), func) {
 			/* cann't use ZEND_STRL in strncasecmp, it cause a compile failed in VS2009 */
 			if (strncasecmp(ZSTR_VAL(func), YAF_BOOTSTRAP_INITFUNC_PREFIX, sizeof(YAF_BOOTSTRAP_INITFUNC_PREFIX)-1)) {

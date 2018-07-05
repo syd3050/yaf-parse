@@ -28,6 +28,11 @@
 #include "yaf_loader.h"
 #include "yaf_exception.h"
 
+
+/**
+代码与类自动加载器
+ */
+
 zend_class_entry *yaf_loader_ce;
 
 /** {{{ ARG_INFO
@@ -244,6 +249,7 @@ yaf_loader_t *yaf_loader_instance(yaf_loader_t *this_ptr, zend_string *library_p
 
 	zend_update_static_property(yaf_loader_ce, ZEND_STRL(YAF_LOADER_PROPERTY_NAME_INSTANCE), this_ptr);
 
+    /* 注册默认的自动加载方法: Yaf_Loader::autoload() */
 	if (!yaf_loader_register(this_ptr)) {
 		php_error_docref(NULL, E_WARNING, "Failed to register autoload function");
 	}
@@ -533,6 +539,9 @@ PHP_METHOD(yaf_loader, getLibraryPath) {
 }
 /* }}} */
 
+/**
+加载对应的 PHP 文件到当前执行环境。实际上仍然调用的是 yaf_loader_import() 函数进行加载工作
+*/
 /** {{{ proto public static Yaf_Loader::import($file)
 */
 PHP_METHOD(yaf_loader, import) {
@@ -579,6 +588,19 @@ PHP_METHOD(yaf_loader, import) {
 	}
 }
 /* }}} */
+
+/**
+当代码遇到当前文件中未定义的类时，需要自动加载器完成对应代码的加载工作。
+从这个方法的逻辑可以看到 yaf 自动加载的规律。
+在未做特殊配置的情况下，在默认模块下进行开发，简单来说可以概括成如下几个：
+1.代码的起始查找目录都在于在ini中定义的application.directory(此处值可以使用PHP代码中的预定义常量)
+2._表示目录分隔符，class Foo_BarBar_Var等同于目录Foo/BarBar/Var.php
+3.Controller为结尾的类会在controllers目录下进行查找
+4.Model为结尾的类会在models目录下进行查找
+5.Plugin为结尾的类会在plugins目录下进行查找
+6.其他类会在library目录下进行查找
+
+*/
 
 /** {{{ proto public Yaf_Loader::autoload($class_name)
 */
@@ -684,6 +706,15 @@ PHP_METHOD(yaf_loader, autoload) {
 		goto out;
 	}
 
+    /*
+     手册里面提及：在use_spl_autoload关闭的情况下, Yaf Autoloader在一次找不到的情况下, 会立即返回,
+     而剥夺其后的自动加载器的执行机会.
+     从代码执行逻辑上来看，确实如此，spl_autoload_register() 这一函数在注册的回调方法返回 TRUE 时，
+     不会调用已注册函数列表中的下一个加载函数。
+     通过 Composer 生成的自动加载方法，实际上会优先于 yaf 自身的自动加载方法，
+     由于 yaf 的自动加载方法也是通过 spl_autoload_register() 方法注册的，
+     处于同一个加载函数队列，在 Composer 声明优先的情况下，加载函数执行顺序就会发生变化
+    */
 	if (!YAF_G(use_spl_autoload)) {
 		/** directory might be NULL since we passed a NULL */
 		if (yaf_internal_autoload(file_name, file_name_len, &directory)) {
