@@ -109,6 +109,15 @@ static int yaf_response_set_body(yaf_response_t *response, char *name, int name_
 #endif
 /* }}} */
 
+/**
+返回内容可以在多次的 foward 等过程中，在当前返回数据之前或者之后进行追加操作，
+也可以直接替换最终返回的数据。
+这一函数可以支持：
+YAF_RESPONSE_PREPEND 添加到头部
+YAF_RESPONSE_APPEND 追加到尾部
+YAF_RESPONSE_REPLACE 修改数据
+相对应的就是 response 对象中的 prependBody() / appendBody() / setBody() 方法。
+*/
 /** {{{ int yaf_response_alter_body(yaf_response_t *response, zend_string *name, zend_string *body, int flag)
  */
 int yaf_response_alter_body(yaf_response_t *response, zend_string *name, zend_string *body, int flag) {
