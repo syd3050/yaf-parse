@@ -9,5 +9,10 @@ run->yaf_dispatcher_dispatch
                                       ->yaf_request_set_routed
                          ->yaf_dispatcher_init_view
                          ->yaf_dispatcher_handle (do-while)
+                                      ->yaf_dispatcher_get_controller
+                                                                    ->yaf_internal_autoload | instanceof_function
+                                      ->call_user_function_ex | zend_call_method
+                                      ->yaf_dispatcher_get_action
+                                      ->yaf_response_alter_body
                          ->yaf_dispatcher_fix_default
  
