@@ -1,0 +1,13 @@
+
+Application:
+run->yaf_dispatcher_dispatch
+  Dispatcher:
+  yaf_dispatcher_dispatch->yaf_response_instance
+                         ->yaf_request_is_routed
+                                      ->yaf_dispatcher_route
+                                      ->yaf_dispatcher_fix_default
+                                      ->yaf_request_set_routed
+                         ->yaf_dispatcher_init_view
+                         ->yaf_dispatcher_handle (do-while)
+                         ->yaf_dispatcher_fix_default
+ 
